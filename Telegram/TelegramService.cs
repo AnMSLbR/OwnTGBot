@@ -29,12 +29,15 @@ public class TelegramService : ITelegramService
             long chatId = message.GetProperty("chat").GetProperty("id").GetInt64();
             string text = message.GetProperty("text").GetString() ?? "";
 
-            var aiAgentResponse = await aiAgentService.GetResponseAsync(text);
+            var aiAgentResponse = await aiAgentService.AskAsync(text);
+
+            string formattedResponse = TelegramMarkdownConverter.Convert(aiAgentResponse);
 
             var payload = new
             {
                 chat_id = chatId,
-                text = aiAgentResponse
+                text = formattedResponse,
+                parse_mode = "MarkdownV2"
             };
 
             var json = JsonSerializer.Serialize(payload);

@@ -1,4 +1,4 @@
 public interface IAiAgentService
 {
-    Task<string> GetResponseAsync(string prompt);
+    Task<string> AskAsync(string userMessage);
 }
