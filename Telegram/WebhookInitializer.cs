@@ -42,8 +42,8 @@ public class WebhookInitializer
     {
         var psi = new ProcessStartInfo
         {
-            FileName = "npx",
-            Arguments = $"lt --port {port}",
+            FileName = "cmd.exe",
+            Arguments = $"/c npx localtunnel --port {port}",
             RedirectStandardOutput = true,
             UseShellExecute = false,
             CreateNoWindow = true
