@@ -5,13 +5,15 @@ public class TelegramService : ITelegramService
 {
     private readonly IConfiguration _config;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILogger<TelegramService> _logger;
     private readonly string _tgToken;
     private readonly string _tgApiUrl;
 
-    public TelegramService(IConfiguration config, IHttpClientFactory httpClientFactory)
+    public TelegramService(IConfiguration config, IHttpClientFactory httpClientFactory, ILogger<TelegramService> logger)
     {
         _config = config;
         _httpClientFactory = httpClientFactory;
+        _logger = logger;
         _tgToken = _config["TgBotToken"] ?? "";
         _tgApiUrl = $"https://api.telegram.org/bot{_tgToken}/sendMessage";
     }
@@ -28,6 +30,8 @@ public class TelegramService : ITelegramService
         {
             long chatId = message.GetProperty("chat").GetProperty("id").GetInt64();
             string text = message.GetProperty("text").GetString() ?? "";
+
+            _logger.LogInformation("Message from {ChatId}: {Text}", chatId, text);
 
             var aiAgentResponse = await aiAgentService.AskAsync(text);
 

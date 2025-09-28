@@ -6,13 +6,15 @@ public class WebhookInitializer
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _config;
+    private readonly ILogger<TelegramService> _logger;
     private readonly string _tgToken;
 
-    public WebhookInitializer(IHttpClientFactory httpClientFactory, IConfiguration config)
+    public WebhookInitializer(IHttpClientFactory httpClientFactory, IConfiguration config, ILogger<TelegramService> logger)
     {
         _httpClientFactory = httpClientFactory;
         _config = config;
-        _tgToken = _config["TgBotToken"] ?? throw new InvalidOperationException("No TgBotToken in config");
+        _logger = logger;
+        _tgToken = _config["TgBotToken"] ?? "";
     }
 
     public async Task InitWebhookAsync()
@@ -33,9 +35,9 @@ public class WebhookInitializer
 
         var json = JsonDocument.Parse(response);
         if (json.RootElement.GetProperty("ok").GetBoolean())
-            Console.WriteLine($"Webhook was set: {webhookUrl}");
+            _logger.LogInformation("Webhook was set: {WebhookUrl}", webhookUrl);
         else
-            Console.WriteLine($"Webhook setting error: {response}");
+            _logger.LogInformation("Webhook setting error: {Response}", response);
     }
 
     private async Task<string> GetLocalTunnelUrl(int port)
@@ -49,8 +51,9 @@ public class WebhookInitializer
             CreateNoWindow = true
         };
 
-        using var process = Process.Start(psi);
-        if (process == null) throw new Exception("Failed to start LocalTunnel");
+        using var process = Process.Start(psi) ?? throw new Exception("Failed to start LocalTunnel");
+
+        _logger.LogInformation("Process {FileName} with arguments \"{Arguments}\" was started successfully.", psi.FileName,psi.Arguments);
 
         string? url = null;
         while (!process.StandardOutput.EndOfStream)
