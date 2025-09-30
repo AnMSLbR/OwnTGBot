@@ -8,6 +8,7 @@ public class TelegramService : ITelegramService
     private readonly ILogger<TelegramService> _logger;
     private readonly string _tgToken;
     private readonly string _tgApiUrl;
+    private readonly long _tgAdminId;
 
     public TelegramService(IConfiguration config, IHttpClientFactory httpClientFactory, ILogger<TelegramService> logger)
     {
@@ -15,6 +16,7 @@ public class TelegramService : ITelegramService
         _httpClientFactory = httpClientFactory;
         _logger = logger;
         _tgToken = _config["TgBotToken"] ?? "";
+        long.TryParse(_config["TgUserId"], out _tgAdminId);
         _tgApiUrl = $"https://api.telegram.org/bot{_tgToken}/sendMessage";
     }
 
@@ -26,21 +28,30 @@ public class TelegramService : ITelegramService
         using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
 
+        string response = "";
         if (root.TryGetProperty("message", out var message))
         {
             long chatId = message.GetProperty("chat").GetProperty("id").GetInt64();
+            long fromId = message.GetProperty("from").GetProperty("id").GetInt64();
             string text = message.GetProperty("text").GetString() ?? "";
 
-            _logger.LogInformation("Message from {ChatId}: {Text}", chatId, text);
+            if (fromId == _tgAdminId)
+            {
+                _logger.LogInformation("Message from {FromId}: {Text}", fromId, text);
 
-            var aiAgentResponse = await aiAgentService.AskAsync(text);
-
-            string formattedResponse = TelegramMarkdownConverter.Convert(aiAgentResponse);
+                var aiAgentResponse = await aiAgentService.AskAsync(text);
+                response = TelegramMarkdownConverter.Convert(aiAgentResponse);
+            }
+            else
+            {
+                _logger.LogWarning("Unauthorized access attempt from {FromId}: {Text}", fromId, text);
+                response = "Access denied";
+            }
 
             var payload = new
             {
                 chat_id = chatId,
-                text = formattedResponse,
+                text = response,
                 parse_mode = "MarkdownV2"
             };
 
