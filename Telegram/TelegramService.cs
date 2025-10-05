@@ -6,15 +6,17 @@ public class TelegramService : ITelegramService
     private readonly IConfiguration _config;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<TelegramService> _logger;
+    private readonly ITelegramCommandHandler _commandHandler;
     private readonly string _tgToken;
     private readonly string _tgApiUrl;
     private readonly long _tgAdminId;
 
-    public TelegramService(IConfiguration config, IHttpClientFactory httpClientFactory, ILogger<TelegramService> logger)
+    public TelegramService(IConfiguration config, IHttpClientFactory httpClientFactory, ILogger<TelegramService> logger, ITelegramCommandHandler commandHandler)
     {
         _config = config;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
+        _commandHandler = commandHandler;
         _tgToken = _config["TgBotToken"] ?? "";
         long.TryParse(_config["TgUserId"], out _tgAdminId);
         _tgApiUrl = $"https://api.telegram.org/bot{_tgToken}";
@@ -34,21 +36,30 @@ public class TelegramService : ITelegramService
             long fromId = message.GetProperty("from").GetProperty("id").GetInt64();
             string text = message.GetProperty("text").GetString() ?? "";
 
-            if (fromId != _tgAdminId)
+            if (_commandHandler.IsCommand(text))
             {
-                _logger.LogWarning("Unauthorized access attempt from {FromId}: {Text}", fromId, text);
-                await SendMessageAsync(chatId, "Access denied");
+                var response = await _commandHandler.HandleCommandAsync(chatId, text);
+                if (String.IsNullOrEmpty(response)) return;
+                await SendMessageAsync(chatId, response);
             }
             else
             {
-                _logger.LogInformation("Message from {FromId}: {Text}", fromId, text);
+                if (fromId != _tgAdminId)
+                {
+                    _logger.LogWarning("Unauthorized access attempt from {FromId}: {Text}", fromId, text);
+                    await SendMessageAsync(chatId, "Access denied");
+                }
+                else
+                {
+                    _logger.LogInformation("Message from {FromId}: {Text}", fromId, text);
 
-                var pendingMessageId = await SendMessageAsync(chatId, "Processing your request...");
+                    var pendingMessageId = await SendMessageAsync(chatId, "Processing your request...");
 
-                var aiAgentResponse = await aiAgentService.AskAsync(text);
-                // string formattedResponse = TelegramMarkdownConverter.Convert(aiAgentResponse);
+                    var aiAgentResponse = await aiAgentService.AskAsync(text);
+                    // string formattedResponse = TelegramMarkdownConverter.Convert(aiAgentResponse);
 
-                await EditMessageAsync(chatId, pendingMessageId, aiAgentResponse);
+                    await EditMessageAsync(chatId, pendingMessageId, aiAgentResponse);
+                }
             }
         }
     }

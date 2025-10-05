@@ -11,6 +11,7 @@ builder.Host.UseSerilog();
 
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<ITelegramService, TelegramService>();
+builder.Services.AddScoped<ITelegramCommandHandler, TelegramCommandHandler>();
 builder.Services.AddScoped<IAiAgentService, GptAgentService>();
 
 var autoSetWebhook = builder.Configuration.GetValue<bool>("AutoSetWebhook");
