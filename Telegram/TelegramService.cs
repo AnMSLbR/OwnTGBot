@@ -35,6 +35,18 @@ public class TelegramService : ITelegramService
             long chatId = message.GetProperty("chat").GetProperty("id").GetInt64();
             long fromId = message.GetProperty("from").GetProperty("id").GetInt64();
             string text = message.GetProperty("text").GetString() ?? "";
+            int unixTime = message.GetProperty("date").GetInt32();
+            var messageTime = DateTimeOffset.FromUnixTimeSeconds(unixTime).ToLocalTime();
+
+            var now = DateTimeOffset.Now;
+
+            if (now - messageTime > TimeSpan.FromMinutes(5))
+            {
+                _logger.LogInformation(
+                    "Ignoring outdated message from {FromId} sent at {MessageTime:yyyy-MM-dd HH:mm:ss}: {Text}",
+                    fromId, messageTime, text);
+                return;
+            }
 
             if (_commandHandler.IsCommand(text))
             {
