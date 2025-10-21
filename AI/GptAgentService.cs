@@ -8,8 +8,8 @@ public class GptAgentService : IAiAgentService
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _config;
     private readonly string _apiKey;
-    // private readonly string _model = "gpt-5";
-    private readonly string _model = "gpt-3.5-turbo";
+    private readonly string _model = "gpt-5-mini";
+    private readonly string _systemPrompt = "You are a helpful assistant. Always format your responses strictly using Telegram MarkdownV2 syntax. Escape all special characters as required by Telegram.";
 
     public GptAgentService(IConfiguration config, IHttpClientFactory httpClientFactory)
     {
@@ -29,7 +29,8 @@ public class GptAgentService : IAiAgentService
             model = _model,
             messages = new[]
             {
-                new { role = "user", content = userMessage }
+                new { role = "system", content = _systemPrompt },
+                new { role = "user", content = userMessage },
             }
         };
 
