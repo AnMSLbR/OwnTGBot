@@ -1,5 +1,8 @@
+using System.Dynamic;
+using System.Runtime.Serialization;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 public class TelegramService : ITelegramService
 {
@@ -7,16 +10,22 @@ public class TelegramService : ITelegramService
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<TelegramService> _logger;
     private readonly ITelegramCommandHandler _commandHandler;
+    private readonly ITelegramResponseHandler _tgResponseHandler;
     private readonly string _tgToken;
     private readonly string _tgApiUrl;
     private readonly long _tgAdminId;
 
-    public TelegramService(IConfiguration config, IHttpClientFactory httpClientFactory, ILogger<TelegramService> logger, ITelegramCommandHandler commandHandler)
+    public TelegramService(IConfiguration config,
+                            IHttpClientFactory httpClientFactory,
+                            ILogger<TelegramService> logger,
+                            ITelegramCommandHandler commandHandler,
+                            ITelegramResponseHandler tgResponseHandler)
     {
         _config = config;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
         _commandHandler = commandHandler;
+        _tgResponseHandler = tgResponseHandler;
         _tgToken = _config["TgBotToken"] ?? "";
         long.TryParse(_config["TgUserId"], out _tgAdminId);
         _tgApiUrl = $"https://api.telegram.org/bot{_tgToken}";
@@ -40,7 +49,7 @@ public class TelegramService : ITelegramService
 
             var now = DateTimeOffset.Now;
 
-            if (now - messageTime > TimeSpan.FromMinutes(5))
+            if (now - messageTime > TimeSpan.FromMinutes(3))
             {
                 _logger.LogInformation(
                     "Ignoring outdated message from {FromId} sent at {MessageTime:yyyy-MM-dd HH:mm:ss}: {Text}",
@@ -52,7 +61,7 @@ public class TelegramService : ITelegramService
             {
                 var response = await _commandHandler.HandleCommandAsync(chatId, text);
                 if (String.IsNullOrEmpty(response)) return;
-                await SendMessageAsync(chatId, response);
+                await SendMessageAsync(chatId, response, ParseMode.None);
             }
             else
             {
@@ -65,57 +74,69 @@ public class TelegramService : ITelegramService
                 {
                     _logger.LogInformation("Message from {FromId}: {Text}", fromId, text);
 
-                    var pendingMessageId = await SendMessageAsync(chatId, "Processing your request...");
+                    var pendingResponse = await SendMessageAsync(chatId, "Processing your request...", ParseMode.None);
 
-                    var aiAgentResponse = await aiAgentService.AskAsync(text);
-                    // string formattedResponse = TelegramMarkdownConverter.Convert(aiAgentResponse);
+                    if (pendingResponse.IsSuccess)
+                    {
+                        var aiAgentResponse = await aiAgentService.AskAsync(text);
 
-                    await EditMessageAsync(chatId, pendingMessageId, aiAgentResponse);
+                        var response = await EditMessageAsync(chatId, (int)pendingResponse.MessageId!, aiAgentResponse);
+
+                        if (response.IsRequireResend)
+                            await EditMessageAsync(chatId, (int)pendingResponse.MessageId!, aiAgentResponse, ParseMode.None);
+                    }
                 }
             }
         }
     }
 
-    private async Task<int> SendMessageAsync(long chatId, string text)
+    private async Task<TelegramResponse> SendMessageAsync(long chatId, string text, ParseMode parseMode = ParseMode.MarkdownV2)
     {
-        var payload = new
-        {
-            chat_id = chatId,
-            text,
-            // parse_mode = "MarkdownV2"
-        };
+        dynamic payload = new ExpandoObject();
+        payload.chat_id = chatId;
+        payload.text = text;
+
+        if (parseMode is not ParseMode.None)
+            payload.parse_mode = parseMode;
 
         return await PostToTelegramAsync("sendMessage", payload);
     }
 
-    private async Task<int> EditMessageAsync(long chatId, int messageId, string newText)
+    private async Task<TelegramResponse> EditMessageAsync(long chatId, int messageId, string newText, ParseMode parseMode = ParseMode.MarkdownV2)
     {
-        var payload = new
-        {
-            chat_id = chatId,
-            message_id = messageId,
-            text = newText,
-            // parse_mode = "MarkdownV2"
-        };
+        dynamic payload = new ExpandoObject();
+        payload.chat_id = chatId;
+        payload.message_id = messageId;
+        payload.text = newText;
+
+        if (parseMode is not ParseMode.None)
+            payload.parse_mode = parseMode;
 
         return await PostToTelegramAsync("editMessageText", payload);
     }
 
-    private async Task<int> PostToTelegramAsync(string method, object payload)
+    private async Task<TelegramResponse> PostToTelegramAsync(string method, object payload)
     {
         var json = JsonSerializer.Serialize(payload);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         var http = _httpClientFactory.CreateClient();
         var response = await http.PostAsync($"{_tgApiUrl}/{method}", content);
-        response.EnsureSuccessStatusCode();
 
-        var responseJson = await response.Content.ReadAsStringAsync();
-        using var doc = JsonDocument.Parse(responseJson);
-
-        return doc.RootElement
-                  .GetProperty("result")
-                  .GetProperty("message_id")
-                  .GetInt32();
+        return await _tgResponseHandler.Parse(response);
     }
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+enum ParseMode
+{
+    [EnumMember(Value = "Markdown")]
+    Markdown,
+
+    [EnumMember(Value = "HTML")]
+    Html,
+
+    [EnumMember(Value = "MarkdownV2")]
+    MarkdownV2,
+    None
 }
